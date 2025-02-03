@@ -44,92 +44,79 @@ class PaginationHandler {
     try {
       console.log('🖱️ Clicking load more button');
       
-      // Wait for React to be ready
-      await this.page.waitForFunction(() => {
-        return window.__REACT_DEVTOOLS_GLOBAL_HOOK__ || 
-               window._reactRootContainer ||
-               document.querySelector('[data-reactroot]');
-      }, { timeout: constants.defaultTimeout });
+      // Try InstantSearch method first
+      const instantSearchSuccess = await this.tryInstantSearchPagination();
       
-      // Scroll to button with human-like behavior
-      await this.page.evaluate(() => {
-        const btn = document.querySelector('.load-more-btn');
-        if (btn) {
-          const rect = btn.getBoundingClientRect();
-          window.scrollTo({
-            top: window.scrollY + rect.top - (window.innerHeight / 2),
-            behavior: 'smooth'
-          });
+      if (instantSearchSuccess) {
+        console.log('✅ InstantSearch pagination successful');
+        return true;
+      }
+      
+      console.log('⚠️ InstantSearch pagination failed, trying direct Algolia request');
+      
+      // Fallback to direct Algolia request
+      const algoliaSuccess = await this.tryAlgoliaPagination();
+      
+      if (algoliaSuccess) {
+        console.log('✅ Direct Algolia request successful');
+        return true;
+      }
+      
+      console.log('❌ Both pagination methods failed');
+      return false;
+    } catch (error) {
+      console.error('Error in pagination:', error);
+      return false;
+    }
+  }
+
+  async tryInstantSearchPagination() {
+    try {
+      
+      // Get InstantSearch instance and trigger next page
+      const success = await this.page.evaluate(() => {
+        try {
+          // Find InstantSearch instance
+          const searchClient = window.searchClient;
+          if (!searchClient) {
+            console.log('InstantSearch client not found');
+            return false;
+          }
+
+          // Get current state
+          const state = searchClient.helper.state;
+          const currentPage = state.page || 0;
+          
+          // Trigger next page
+          searchClient.helper
+            .setPage(currentPage + 1)
+            .search();
+            
+          return true;
+        } catch (error) {
+          console.error('Error triggering InstantSearch pagination:', error);
+          return false;
         }
       });
-      
-      // Wait for any scroll animations to complete
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Click the button and wait for response
-      const [response] = await Promise.all([
-        this.page.waitForResponse(
-          response => response.url().includes('catResults') && response.status() === 200,
-          { timeout: constants.defaultTimeout }
-        ),
-        this.page.evaluate(async () => {
-          const btn = document.querySelector('.load-more-btn');
-          if (btn && !btn.disabled) {
-            // Get React fiber node
-            let fiber = null;
-            for (const key in btn) {
-              if (key.startsWith('__reactFiber$')) {
-                fiber = btn[key];
-                break;
-              }
-            }
-            
-            if (fiber) {
-              // Find React click handler
-              const props = fiber.memoizedProps || {};
-              if (props.onClick) {
-                // Simulate React synthetic event
-                const event = new MouseEvent('click', {
-                  bubbles: true,
-                  cancelable: true,
-                  view: window
-                });
-                
-                // Add React's synthetic event properties
-                Object.defineProperty(event, '_reactName', {
-                  get: () => 'onClick'
-                });
-                
-                // Call React's click handler
-                props.onClick(event);
-                return true;
-              }
-            }
-            
-            // Fallback to native click if React handler not found
-            btn.click();
-            return true;
-          }
-          return false;
-        }),
-      ]);
+
+      if (!success) {
+        console.log('Failed to trigger InstantSearch pagination');
+        return false;
+      }
       
       // Wait for new items to render
       await this.page.waitForFunction(() => {
         const loadingIndicator = document.querySelector('.loading-indicator');
         return !loadingIndicator || window.getComputedStyle(loadingIndicator).display === 'none';
       }, { timeout: constants.defaultTimeout });
-      
-      // Additional wait for DOM updates
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       // Get updated count
       const newCount = await this.getInitialCount();
       console.log(`  • New item count: ${newCount}`);
       
       return true;
     } catch (error) {
-      console.error('Error clicking load more:', error);
+      console.error('Error in Algolia pagination:', error);
       return false;
     }
   }
