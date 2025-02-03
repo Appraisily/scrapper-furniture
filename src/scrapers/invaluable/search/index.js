@@ -13,7 +13,7 @@ class SearchManager {
 
   loadAuctionHouses() {
     try {
-      const auctionData = fs.readFileSync(path.join(process.cwd(), 'src/auction.txt'), 'utf8');
+      const auctionData = fs.readFileSync(path.join(__dirname, '../../auction.txt'), 'utf8');
       return JSON.parse(auctionData);
     } catch (error) {
       console.error('Error loading auction houses:', error);
