@@ -13,12 +13,17 @@ class SearchManager {
 
   loadAuctionHouses() {
     try {
-      const auctionData = fs.readFileSync(path.join(__dirname, '../../auction.txt'), 'utf8');
+      const auctionData = fs.readFileSync(path.join(process.cwd(), 'src/auction.txt'), 'utf8');
       const houses = JSON.parse(auctionData);
-      console.log(`Loaded ${houses.length} auction houses`);
+      console.log(`Loaded ${houses.length} auction houses. First house: ${houses[0].name}`);
+      if (houses.length === 0) {
+        throw new Error('No auction houses loaded from file');
+      }
       return houses;
     } catch (error) {
-      console.error('Error loading auction houses:', error);
+      console.error('Error loading auction houses:', error.message);
+      console.error('Current directory:', process.cwd());
+      console.error('Looking for file:', path.join(process.cwd(), 'src/auction.txt'));
       return [];
     }
   }
