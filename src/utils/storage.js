@@ -34,56 +34,9 @@ class CloudStorage {
       const searchId = `${metadata.source}-furniture-${timestamp}`;
       console.log('📁 Starting file saves');
       console.log('  • Search ID:', searchId);
-
+      
       metadata.files = {};
-      metadata.files.html = {};
-      
-      // Save HTML files
-      if (html.html.initial) {
-        console.log('  • Saving initial HTML');
-        const filename = `${baseFolder}/html/${searchId}-initial.html`;
-        const file = this.storage.bucket(this.bucketName).file(filename);
-        await file.save(html.html.initial, {
-          contentType: 'text/html',
-          metadata: {
-            type: 'initial',
-            searchId
-          }
-        });
-        metadata.files.html.initial = filename;
-        console.log(`    - Saved ${(html.html.initial.length / 1024).toFixed(2)} KB`);
-      }
-      
-      if (html.html.protection) {
-        console.log('  • Saving protection HTML');
-        const filename = `${baseFolder}/html/${searchId}-protection.html`;
-        const file = this.storage.bucket(this.bucketName).file(filename);
-        await file.save(html.html.protection, {
-          contentType: 'text/html',
-          metadata: {
-            type: 'protection',
-            searchId
-          }
-        });
-        metadata.files.html.protection = filename;
-        console.log(`    - Saved ${(html.html.protection.length / 1024).toFixed(2)} KB`);
-      }
-      
-      if (html.html.final) {
-        console.log('  • Saving final HTML');
-        const filename = `${baseFolder}/html/${searchId}-final.html`;
-        const file = this.storage.bucket(this.bucketName).file(filename);
-        await file.save(html.html.final, {
-          contentType: 'text/html',
-          metadata: {
-            type: 'final',
-            searchId
-          }
-        });
-        metadata.files.html.final = filename;
-        console.log(`    - Saved ${(html.html.final.length / 1024).toFixed(2)} KB`);
-      }
-      
+
       // Save API responses
       metadata.files.api = [];
       if (html.apiData?.responses?.length > 0) {
@@ -119,7 +72,6 @@ class CloudStorage {
 
       console.log('✅ All files saved successfully');
       console.log('  Files saved:');
-      console.log('    - HTML:', Object.keys(metadata.files.html).length, 'files');
       console.log('    - API:', metadata.files.api.length, 'responses');
       console.log('    - Metadata: 1 file');
       
