@@ -1,6 +1,6 @@
 const BrowserManager = require('./browser');
 const AuthManager = require('./auth');
-const SearchManager = require('./search');
+const FurnitureSearchManager = require('./search');
 
 class InvaluableScraper {
   constructor() {

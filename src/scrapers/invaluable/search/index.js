@@ -1,7 +1,7 @@
 const { constants } = require('../utils');
 const ApiMonitor = require('./api-monitor');
 
-class FurnitureSearchManager {
+class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
     this.searchUrl = 'https://www.invaluable.com/search?supercategoryName=Furniture&priceResult[min]=250&upcoming=false&query=furniture&keyword=furniture';
@@ -105,3 +105,5 @@ class FurnitureSearchManager {
     }
   }
 }
+
+module.exports = SearchManager;
