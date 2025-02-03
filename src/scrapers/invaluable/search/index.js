@@ -17,12 +17,21 @@ class SearchManager {
       const page = this.browserManager.getPage();
       console.log('🔄 Starting furniture search process');
       
+      // Enable cookies
+      await page.setBypassCSP(true);
+      const client = await page.target().createCDPSession();
+      await client.send('Network.enable');
+      await client.send('Network.setCookiesSameSite', {
+        sameSite: 'None'
+      });
+      
       // Reset page
       await page.setRequestInterception(false);
       await page.removeAllListeners('request');
       await page.removeAllListeners('response');
       
-      // Set cookies
+      // Set provided cookies
+      console.log('🍪 Setting authentication cookies');
       await page.setCookie(...cookies);
       
       let initialHtml = null;
@@ -37,11 +46,34 @@ class SearchManager {
       console.log('🌐 Step 4: Navigating to furniture search URL');
 
       try {
-        console.log('  • Starting navigation with API monitoring');
-        await page.goto(this.searchUrl, {
+        // First attempt navigation
+        const response = await page.goto(this.searchUrl, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
+        
+        // Check if we hit Cloudflare protection
+        const isCloudflare = response.headers()['server']?.includes('cloudflare') || 
+                            (await page.content()).includes('Cloudflare');
+        
+        if (isCloudflare) {
+          console.log('🛡️ Cloudflare protection detected');
+          
+          // Wait for and solve the challenge
+          await page.waitForFunction(() => {
+            return !document.querySelector('#challenge-running') &&
+                   !document.querySelector('#challenge-stage');
+          }, { timeout: 30000 });
+          
+          console.log('✅ Cloudflare challenge completed');
+          
+          // Re-attempt navigation after challenge
+          await page.goto(this.searchUrl, {
+            waitUntil: 'networkidle0',
+            timeout: constants.navigationTimeout
+          });
+        }
+        
         console.log('  • Navigation complete');
 
         await this.delay(page, 2000);
