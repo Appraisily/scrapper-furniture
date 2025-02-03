@@ -30,27 +30,47 @@ class SearchManager {
       await page.setRequestInterception(false);
       await page.removeAllListeners('request');
       await page.removeAllListeners('response');
+
+      const apiMonitor = new ApiMonitor();
+      console.log('👀 Step 3: Enabling API request interception');
       
       // Set authentication cookies
       console.log('🍪 Setting authentication cookies');
       await page.setRequestInterception(true);
+      
+      // Set up consolidated request handling
       page.on('request', request => {
-        const headers = request.headers();
-        headers['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        request.continue({ headers });
+        try {
+          const url = request.url();
+          const headers = request.headers();
+          
+          // Add cookies to all requests
+          headers['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+          
+          // Handle API monitoring for catResults requests
+          if (url.includes('catResults')) {
+            headers['Accept'] = 'application/json';
+            headers['Content-Type'] = 'application/json';
+            console.log('  • Intercepted API request:', url);
+          }
+          
+          request.continue({ headers });
+        } catch (error) {
+          if (!error.message.includes('Request is already handled')) {
+            console.error('Request handling error:', error);
+          }
+          request.continue();
+        }
       });
+      
+      // Set up response monitoring
+      page.on('response', apiMonitor.handleResponse.bind(apiMonitor));
       
       // Also set cookies directly
       await page.setCookie(...cookies);
       
       let initialHtml = null;
       let protectionHtml = null;
-      let finalHtml = null;
-
-      const apiMonitor = new ApiMonitor();
-      console.log('👀 Step 3: Enabling API request interception');
-      await page.setRequestInterception(true);
-      apiMonitor.setupRequestInterception(page);
       
       console.log('🌐 Step 4: Navigating to furniture search URL');
 
