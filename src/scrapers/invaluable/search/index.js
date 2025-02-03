@@ -14,9 +14,7 @@ class SearchManager {
   loadAuctionHouses() {
     try {
       const auctionData = fs.readFileSync(path.join(process.cwd(), 'src/auction.txt'), 'utf8');
-      const houses = JSON.parse(auctionData);
-      // Only use first house for now
-      return houses.slice(0, 1);
+      return JSON.parse(auctionData);
     } catch (error) {
       console.error('Error loading auction houses:', error);
       return [];
@@ -29,14 +27,34 @@ class SearchManager {
     for (const house of this.auctionHouses) {
       let priceRanges;
       
-      if (house.count <= 1000) {
+      if (house.count > 10000) {
+        // For very large auctions (100 ranges)
+        priceRanges = [];
+        let currentMin = 250;
+        for (let i = 0; i < 99; i++) {
+          const max = Math.round(currentMin * 1.15); // 15% increase each step
+          priceRanges.push({ min: currentMin, max });
+          currentMin = max;
+        }
+        priceRanges.push({ min: currentMin }); // Final range with no max
+      } else if (house.count > 4000) {
+        // For large auctions (20 ranges)
+        priceRanges = [];
+        let currentMin = 250;
+        for (let i = 0; i < 19; i++) {
+          const max = Math.round(currentMin * 1.35); // 35% increase each step
+          priceRanges.push({ min: currentMin, max });
+          currentMin = max;
+        }
+        priceRanges.push({ min: currentMin }); // Final range with no max
+      } else if (house.count <= 1000) {
         // For smaller auctions (like DOYLE with 585 items), use 3 segments
         priceRanges = [
           { min: 250, max: 500 },
           { min: 500, max: 2000 },
           { min: 2000 } // No max for last range
         ];
-      } else if (house.count <= 5000) {
+      } else {
         // For medium-sized auctions, use 5 segments
         priceRanges = [
           { min: 250, max: 500 },
@@ -44,17 +62,6 @@ class SearchManager {
           { min: 1000, max: 2500 },
           { min: 2500, max: 5000 },
           { min: 5000 }
-        ];
-      } else {
-        // For large auctions (like Showplace with 18,241 items), use more segments
-        priceRanges = [
-          { min: 250, max: 500 },
-          { min: 500, max: 1000 },
-          { min: 1000, max: 2500 },
-          { min: 2500, max: 5000 },
-          { min: 5000, max: 10000 },
-          { min: 10000, max: 25000 },
-          { min: 25000 }
         ];
       }
       
@@ -95,16 +102,33 @@ class SearchManager {
   }
 
   async delay(page, ms) {
-    return page.evaluate(ms => new Promise(r => setTimeout(r, ms)), ms);
+    const randomDelay = Math.floor(Math.random() * (30000 - 20000 + 1)) + 20000; // Random between 20-30 seconds
+    console.log(`Waiting ${(randomDelay / 1000).toFixed(1)} seconds...`);
+    return page.evaluate(ms => new Promise(r => setTimeout(r, ms)), randomDelay);
   }
 
   async searchFurniture(cookies) {
     try {
       console.log('🔄 Starting furniture search process');
-      console.log('Processing auction house:', this.auctionHouses[0].name);
+      
+      // Get last processed index
+      const storage = require('../../utils/storage');
+      const lastIndex = await storage.getLastProcessedIndex();
+      const nextIndex = lastIndex + 1;
+      
+      // Check if we've processed all houses
+      if (nextIndex >= this.auctionHouses.length) {
+        console.log('All auction houses have been processed');
+        return { status: 'completed', message: 'All auction houses processed' };
+      }
+      
+      // Update index immediately before processing
+      await storage.updateProcessedIndex(nextIndex);
+      
+      const house = this.auctionHouses[nextIndex];
+      console.log(`Processing auction house ${nextIndex}:`, house.name);
       
       // Get price ranges for the auction house
-      const house = this.auctionHouses[0];
       const priceRanges = this.priceRanges.get(house.name);
       
       // Generate URLs for each price range
@@ -188,7 +212,8 @@ class SearchManager {
             timeout: constants.navigationTimeout
           });
 
-          await this.delay(page, 5000);
+          // Random delay between requests
+          await this.delay(page);
 
           const urlResponses = apiMonitor.getData();
           if (urlResponses.responses.length > 0) {

@@ -4,6 +4,7 @@ class CloudStorage {
   constructor() {
     this.storage = new Storage();
     this.bucketName = process.env.STORAGE_BUCKET || 'invaluable-html-archive';
+    this.indexFile = 'state/last_index.json';
     this.initialized = false;
   }
 
@@ -18,6 +19,45 @@ class CloudStorage {
       this.initialized = true;
     } catch (error) {
       console.error('[Storage] Error initializing bucket:', error);
+      throw error;
+    }
+  }
+
+  async getLastProcessedIndex() {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      const file = this.storage.bucket(this.bucketName).file(this.indexFile);
+      const [exists] = await file.exists();
+
+      if (!exists) {
+        console.log('No index file found, starting from 0');
+        return -1;
+      }
+
+      const [content] = await file.download();
+      const { lastIndex } = JSON.parse(content.toString());
+      console.log('Last processed index:', lastIndex);
+      return lastIndex;
+    } catch (error) {
+      console.error('[Storage] Error reading last index:', error);
+      return -1;
+    }
+  }
+
+  async updateProcessedIndex(index) {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      const file = this.storage.bucket(this.bucketName).file(this.indexFile);
+      await file.save(JSON.stringify({ lastIndex: index, updatedAt: new Date().toISOString() }));
+      console.log('Updated last processed index to:', index);
+    } catch (error) {
+      console.error('[Storage] Error updating index:', error);
       throw error;
     }
   }
