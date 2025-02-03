@@ -5,7 +5,10 @@ class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
     this.searchUrl = 'https://www.invaluable.com/search?supercategoryName=Furniture&priceResult[min]=250&upcoming=false&query=furniture&keyword=furniture';
-    this.delay = ms => page.evaluate(ms => new Promise(r => setTimeout(r, ms)), ms);
+  }
+
+  async delay(page, ms) {
+    return page.evaluate(ms => new Promise(r => setTimeout(r, ms)), ms);
   }
 
   async searchFurniture(cookies) {
@@ -40,7 +43,7 @@ class SearchManager {
         });
         console.log('  • Navigation complete');
 
-        await this.delay(2000);
+        await this.delay(page, 2000);
 
         console.log('📄 Step 5: Capturing initial HTML');
         initialHtml = await page.content();
@@ -52,7 +55,7 @@ class SearchManager {
           protectionHtml = initialHtml;
           console.log('🤖 Step 6b: Processing protection challenge');
           await this.browserManager.handleProtection();
-          await this.delay(2000);
+          await this.delay(page, 2000);
           console.log('✅ Step 6c: Protection cleared');
           await page.goto(this.searchUrl, { waitUntil: 'networkidle0', timeout: constants.navigationTimeout });
           initialHtml = await page.content();
@@ -67,7 +70,7 @@ class SearchManager {
           console.log('⚠️ Step 7: No API response captured during navigation');
         }
 
-        await this.delay(2000);
+        await this.delay(page, 2000);
 
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
