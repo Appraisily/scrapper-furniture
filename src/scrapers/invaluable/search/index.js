@@ -1,5 +1,6 @@
 const { constants } = require('../utils');
 const ApiMonitor = require('./api-monitor');
+const PaginationHandler = require('./pagination-handler');
 
 class SearchManager {
   constructor(browserManager) {
@@ -75,13 +76,41 @@ class SearchManager {
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
         console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
+        
+        // Handle pagination
+        console.log('🔄 Step 9: Checking for more results');
+        const paginationHandler = new PaginationHandler(page);
+        
+        const initialCount = await paginationHandler.getInitialCount();
+        const totalCount = await paginationHandler.getTotalCount();
+        
+        console.log(`  • Initial items: ${initialCount}`);
+        console.log(`  • Total available: ${totalCount}`);
+        
+        if (await paginationHandler.waitForLoadMoreButton()) {
+          console.log('  • Load more button found');
+          
+          // Click load more and capture response
+          const loadMoreSuccess = await paginationHandler.clickLoadMore();
+          
+          if (loadMoreSuccess) {
+            console.log('  • Successfully loaded more items');
+            await this.delay(page, 2000);
+            
+            // Update final HTML to include new items
+            finalHtml = await page.content();
+            console.log(`  • Updated final HTML size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
+          }
+        } else {
+          console.log('  • No more results to load');
+        }
 
       } catch (error) {
         console.log('❌ Error during process:', error.message);
       }
 
       const monitorData = apiMonitor.getData();
-      console.log('📊 Step 9: Final status:');
+      console.log('📊 Step 10: Final status:');
       console.log(`  • API responses captured: ${monitorData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
 
