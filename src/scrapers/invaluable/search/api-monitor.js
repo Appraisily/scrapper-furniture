@@ -2,9 +2,14 @@ const { constants } = require('../utils');
 
 class ApiMonitor {
   constructor() {
+    this.reset();
+  }
+
+  reset() {
     this.responses = [];
     this.seenResponses = new Set();
     this.firstResponseSize = 0;
+    this.firstResponseCaptured = false;
   }
 
   async handleResponse(response) {
@@ -21,7 +26,7 @@ class ApiMonitor {
         
         const responseHash = this.hashResponse(responseData);
 
-        if (this.seenResponses.has(responseHash)) {
+        if (this.seenResponses.has(responseHash) && responseData.length === this.firstResponseSize) {
           console.log('    - Duplicate response detected');
           return;
         }
@@ -29,7 +34,8 @@ class ApiMonitor {
         this.seenResponses.add(responseHash);
         console.log('    - New unique response:', (responseData.length / 1024).toFixed(2), 'KB');
 
-        if (!this.firstResponseCaptured && responseData.length > 1000) {
+        // Always capture responses over 1KB
+        if (responseData.length > 1000) {
           this.responses.push(responseData);
           console.log('    - Saved as first response');
           this.firstResponseSize = responseData.length;
