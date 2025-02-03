@@ -110,9 +110,9 @@ class SearchManager {
   async searchFurniture(cookies) {
     try {
       console.log('🔄 Starting furniture search process');
-      
-      // Get last processed index
-      const storage = require('../../utils/storage');
+
+      // Get last processed index from storage
+      const storage = require('../../../utils/storage');
       const lastIndex = await storage.getLastProcessedIndex();
       const nextIndex = lastIndex + 1;
       
