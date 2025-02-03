@@ -17,12 +17,13 @@ class SearchManager {
       const page = this.browserManager.getPage();
       console.log('🔄 Starting furniture search process');
       
-      // Enable cookies
+      // Configure page for cookie handling
       await page.setBypassCSP(true);
-      const client = await page.target().createCDPSession();
-      await client.send('Network.enable');
-      await client.send('Network.setCookiesSameSite', {
-        sameSite: 'None'
+      await page.setExtraHTTPHeaders({
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
       });
       
       // Reset page
@@ -30,8 +31,16 @@ class SearchManager {
       await page.removeAllListeners('request');
       await page.removeAllListeners('response');
       
-      // Set provided cookies
+      // Set authentication cookies
       console.log('🍪 Setting authentication cookies');
+      await page.setRequestInterception(true);
+      page.on('request', request => {
+        const headers = request.headers();
+        headers['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        request.continue({ headers });
+      });
+      
+      // Also set cookies directly
       await page.setCookie(...cookies);
       
       let initialHtml = null;
