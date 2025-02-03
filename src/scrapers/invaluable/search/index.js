@@ -17,32 +17,30 @@ class SearchManager {
 
   async searchFurniture(cookies) {
     try {
-      const page = this.browserManager.getPage();
       console.log('🔄 Starting furniture search process');
       
-      // Configure page for cookie handling
-      await page.setBypassCSP(true);
-      await page.setExtraHTTPHeaders({
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      });
-      
-      // Reset page
-      await page.setRequestInterception(false);
-      await page.removeAllListeners('request');
-      await page.removeAllListeners('response');
-
       const allResponses = [];
-      const apiMonitor = new ApiMonitor();
 
       for (const [index, url] of this.searchUrls.entries()) {
         console.log(`\n🔄 Processing URL ${index + 1}/${this.searchUrls.length}`);
-        console.log('👀 Setting up API interception');
+        
+        // Create a new tab for each URL
+        const tabName = `url-${index + 1}`;
+        console.log(`🔄 Creating new tab: ${tabName}`);
+        const page = await this.browserManager.createTab(tabName);
+        
+        // Configure page
+        await page.setBypassCSP(true);
+        await page.setExtraHTTPHeaders({
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        });
 
-        // Reset request interception
+        console.log('👀 Setting up API interception');
         await page.setRequestInterception(true);
+        const apiMonitor = new ApiMonitor();
 
         // Set up request handling
         const requestHandler = request => {
@@ -85,16 +83,13 @@ class SearchManager {
         try {
           console.log('🌐 Navigating to URL:', url);
           
-          // Navigate with minimal wait conditions
           await page.goto(url, {
             waitUntil: 'networkidle2',
             timeout: constants.navigationTimeout
           });
 
-          // Short delay to ensure API requests complete
           await this.delay(page, 5000);
 
-          // Store responses for this URL
           const urlResponses = apiMonitor.getData();
           if (urlResponses.responses.length > 0) {
             console.log(`✅ Captured ${urlResponses.responses.length} API responses`);
@@ -102,14 +97,13 @@ class SearchManager {
           } else {
             console.log('⚠️ No API responses captured for this URL');
           }
+          
+          // Clean up tab
+          await this.browserManager.closeTab(tabName);
         } catch (error) {
           console.error('Error processing URL:', error.message);
+          await this.browserManager.closeTab(tabName);
         }
-
-        // Clean up listeners
-        page.removeAllListeners('request');
-        page.removeAllListeners('response');
-        apiMonitor.reset();
       }
 
       console.log(`\n📊 Final Results:`);

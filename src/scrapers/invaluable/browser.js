@@ -7,7 +7,7 @@ puppeteer.use(StealthPlugin());
 class BrowserManager {
   constructor() {
     this.browser = null;
-    this.page = null;
+    this.pages = new Map();
   }
 
   async initialize() {
@@ -39,20 +39,6 @@ class BrowserManager {
         isMobile: false
       });
 
-      // Enable request interception for resource types
-      await this.page.setRequestInterception(true);
-      this.page.on('request', request => {
-        const url = request.url();
-        
-        // Only block image resources to reduce bandwidth while keeping functionality
-        if (request.resourceType() === 'image') {
-          request.abort();
-          return;
-        }
-        
-        request.continue();
-      });
-      
       // Override navigator.webdriver
       await this.page.evaluateOnNewDocument(() => {
         Object.defineProperty(navigator, 'webdriver', {
@@ -127,6 +113,9 @@ class BrowserManager {
       
       await this.page.setExtraHTTPHeaders(browserConfig.headers);
       await this.page.setUserAgent(browserConfig.userAgent);
+      
+      // Store initial page
+      this.pages.set('main', this.page);
 
       // Add additional browser features
       await this.page.evaluateOnNewDocument(() => {
@@ -157,11 +146,49 @@ class BrowserManager {
     }
   }
 
+  async createTab(name) {
+    if (this.pages.has(name)) {
+      return this.pages.get(name);
+    }
+
+    const page = await this.browser.newPage();
+    
+    // Configure the new tab
+    await page.setViewport({ 
+      width: 1920 + Math.floor(Math.random() * 100),
+      height: 1080 + Math.floor(Math.random() * 100),
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      isLandscape: true,
+      isMobile: false
+    });
+
+    await page.setUserAgent(browserConfig.userAgent);
+    await page.setExtraHTTPHeaders(browserConfig.headers);
+
+    // Store the new tab
+    this.pages.set(name, page);
+    return page;
+  }
+
+  async closeTab(name) {
+    const page = this.pages.get(name);
+    if (page && name !== 'main') {
+      await page.close();
+      this.pages.delete(name);
+    }
+  }
+
   async close() {
     if (this.browser) {
+      // Close all pages
+      for (const [name, page] of this.pages) {
+        await page.close();
+      }
+      this.pages.clear();
+      
       await this.browser.close();
       this.browser = null;
-      this.page = null;
     }
   }
 
@@ -229,7 +256,7 @@ class BrowserManager {
   }
 
   getPage() {
-    return this.page;
+    return this.pages.get('main');
   }
 }
 
