@@ -1,14 +1,46 @@
 const { constants } = require('../utils');
 const ApiMonitor = require('./api-monitor');
 const PaginationHandler = require('./pagination-handler');
+const fs = require('fs');
+const path = require('path');
 
 class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
-    this.searchUrls = [
-      'https://www.invaluable.com/search?supercategoryName=Furniture&priceResult[min]=250&upcoming=false&query=furniture&keyword=furniture',
-      'https://www.invaluable.com/search?houseName=DOYLE%20Auctioneers%20%26%20Appraisers&supercategoryName=Furniture&Furniture=Tables%2C%20Stands%20%26%20Consoles&priceResult[min]=250&upcoming=false&query=furniture&keyword=furniture'
-    ];
+    this.auctionHouses = this.loadAuctionHouses();
+  }
+
+  loadAuctionHouses() {
+    try {
+      const auctionData = fs.readFileSync(path.join(process.cwd(), 'src/auction.txt'), 'utf8');
+      const houses = JSON.parse(auctionData);
+      // Only use first two houses for now
+      return houses.slice(0, 2);
+    } catch (error) {
+      console.error('Error loading auction houses:', error);
+      return [];
+    }
+  }
+
+  constructSearchUrl(auctionHouse) {
+    const baseParams = {
+      supercategoryName: 'Furniture',
+      'priceResult[min]': '250',
+      upcoming: 'false',
+      query: 'furniture',
+      keyword: 'furniture'
+    };
+
+    if (auctionHouse) {
+      baseParams.houseName = auctionHouse.name;
+    }
+
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(baseParams)) {
+      searchParams.append(key, value);
+    }
+
+    return `https://www.invaluable.com/search?${searchParams.toString()}`;
   }
 
   async delay(page, ms) {
@@ -19,10 +51,22 @@ class SearchManager {
     try {
       console.log('🔄 Starting furniture search process');
       
+      // Generate URLs for each auction house
+      const searchUrls = [
+        // Base URL without auction house filter
+        this.constructSearchUrl(),
+        // URLs for each auction house
+        ...this.auctionHouses.map(house => this.constructSearchUrl(house))
+      ];
+
       const allResponses = [];
 
-      for (const [index, url] of this.searchUrls.entries()) {
-        console.log(`\n🔄 Processing URL ${index + 1}/${this.searchUrls.length}`);
+      for (const [index, url] of searchUrls.entries()) {
+        console.log(`\n🔄 Processing URL ${index + 1}/${searchUrls.length}`);
+        if (index > 0) {
+          console.log(`  • Auction House: ${this.auctionHouses[index - 1].name}`);
+          console.log(`  • Item Count: ${this.auctionHouses[index - 1].count}`);
+        }
         
         // Create a new tab for each URL
         const tabName = `url-${index + 1}`;
@@ -112,7 +156,8 @@ class SearchManager {
       return {
         apiData: { responses: allResponses },
         timestamp: new Date().toISOString(),
-        urls: this.searchUrls
+        urls: searchUrls,
+        auctionHouses: this.auctionHouses
       };
     } catch (error) {
       console.error('Furniture search error:', error);
