@@ -124,5 +124,7 @@ class SearchManager {
       console.error('Furniture search error:', error);
       throw error;
     }
+  }
+}
 
 module.exports = SearchManager;
