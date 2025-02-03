@@ -30,47 +30,56 @@ class SearchManager {
 
   generatePriceRanges() {
     const ranges = new Map();
+    const MAX_PRICE = 10000;
     
     for (const house of this.auctionHouses) {
       let priceRanges;
       
       if (house.count > 10000) {
-        // For very large auctions (100 ranges)
+        // For very large auctions (20 ranges from $250 to $10,000)
         priceRanges = [];
         let currentMin = 250;
-        for (let i = 0; i < 99; i++) {
-          const max = Math.round(currentMin * 1.15); // 15% increase each step
-          priceRanges.push({ min: currentMin, max });
-          currentMin = max;
-        }
-        priceRanges.push({ min: currentMin }); // Final range with no max
-      } else if (house.count > 4000) {
-        // For large auctions (20 ranges)
-        priceRanges = [];
-        let currentMin = 250;
+        const step = (MAX_PRICE - currentMin) / 19; // 19 steps for 20 ranges
         for (let i = 0; i < 19; i++) {
-          const max = Math.round(currentMin * 1.35); // 35% increase each step
+          const max = Math.round(currentMin + step);
           priceRanges.push({ min: currentMin, max });
           currentMin = max;
         }
-        priceRanges.push({ min: currentMin }); // Final range with no max
+        priceRanges.push({ min: currentMin, max: MAX_PRICE }); // Final range
+      } else if (house.count > 4000) {
+        // For large auctions (10 ranges from $250 to $10,000)
+        priceRanges = [];
+        let currentMin = 250;
+        const step = (MAX_PRICE - currentMin) / 9; // 9 steps for 10 ranges
+        for (let i = 0; i < 9; i++) {
+          const max = Math.round(currentMin + step);
+          priceRanges.push({ min: currentMin, max });
+          currentMin = max;
+        }
+        priceRanges.push({ min: currentMin, max: MAX_PRICE }); // Final range
       } else if (house.count <= 1000) {
         // For smaller auctions (like DOYLE with 585 items), use 3 segments
         priceRanges = [
           { min: 250, max: 500 },
-          { min: 500, max: 2000 },
-          { min: 2000 } // No max for last range
+          { min: 500, max: 2500 },
+          { min: 2500, max: MAX_PRICE }
         ];
       } else {
         // For medium-sized auctions, use 5 segments
         priceRanges = [
           { min: 250, max: 500 },
           { min: 500, max: 1000 },
-          { min: 1000, max: 2500 },
-          { min: 2500, max: 5000 },
-          { min: 5000 }
+          { min: 1000, max: 3000 },
+          { min: 3000, max: 6000 },
+          { min: 6000, max: MAX_PRICE }
         ];
       }
+      
+      // Log the generated ranges for verification
+      console.log(`Price ranges for ${house.name} (${house.count} items):`);
+      priceRanges.forEach((range, i) => {
+        console.log(`  Range ${i + 1}: $${range.min} - ${range.max ? '$' + range.max : 'No limit'}`);
+      });
       
       ranges.set(house.name, priceRanges);
     }
