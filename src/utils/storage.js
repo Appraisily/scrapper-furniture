@@ -90,6 +90,7 @@ class CloudStorage {
         console.log('  • Saving API responses');
         for (let i = 0; i < html.apiData.responses.length; i++) {
           const response = html.apiData.responses[i];
+          
           const filename = `${baseFolder}/api/${searchId}-response${i + 1}.json`;
           const file = this.storage.bucket(this.bucketName).file(filename);
           await file.save(response, {
