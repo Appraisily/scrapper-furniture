@@ -43,23 +43,27 @@ class PaginationHandler {
   async clickLoadMore() {
     try {
       console.log('🖱️ Clicking load more button');
-
-      // Wait for JavaScript to be ready
+      
+      // Wait for React to be ready
       await this.page.waitForFunction(() => {
-        return typeof jQuery !== 'undefined' && jQuery.active === 0;
+        return window.__REACT_DEVTOOLS_GLOBAL_HOOK__ || 
+               window._reactRootContainer ||
+               document.querySelector('[data-reactroot]');
       }, { timeout: constants.defaultTimeout });
       
       // Scroll to button with human-like behavior
       await this.page.evaluate(() => {
         const btn = document.querySelector('.load-more-btn');
         if (btn) {
-          btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Trigger any scroll events
-          window.dispatchEvent(new Event('scroll'));
+          const rect = btn.getBoundingClientRect();
+          window.scrollTo({
+            top: window.scrollY + rect.top - (window.innerHeight / 2),
+            behavior: 'smooth'
+          });
         }
       });
       
-      // Wait longer for any animations or lazy loading
+      // Wait for any scroll animations to complete
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Click the button and wait for response
@@ -68,25 +72,52 @@ class PaginationHandler {
           response => response.url().includes('catResults') && response.status() === 200,
           { timeout: constants.defaultTimeout }
         ),
-        this.page.evaluate(() => {
+        this.page.evaluate(async () => {
           const btn = document.querySelector('.load-more-btn');
           if (btn && !btn.disabled) {
-            // Trigger events in the correct order
-            btn.dispatchEvent(new MouseEvent('mousedown'));
-            btn.dispatchEvent(new MouseEvent('mouseup'));
-            btn.dispatchEvent(new MouseEvent('click'));
+            // Get React fiber node
+            let fiber = null;
+            for (const key in btn) {
+              if (key.startsWith('__reactFiber$')) {
+                fiber = btn[key];
+                break;
+              }
+            }
+            
+            if (fiber) {
+              // Find React click handler
+              const props = fiber.memoizedProps || {};
+              if (props.onClick) {
+                // Simulate React synthetic event
+                const event = new MouseEvent('click', {
+                  bubbles: true,
+                  cancelable: true,
+                  view: window
+                });
+                
+                // Add React's synthetic event properties
+                Object.defineProperty(event, '_reactName', {
+                  get: () => 'onClick'
+                });
+                
+                // Call React's click handler
+                props.onClick(event);
+                return true;
+              }
+            }
+            
+            // Fallback to native click if React handler not found
+            btn.click();
             return true;
           }
           return false;
-        })
+        }),
       ]);
       
       // Wait for new items to render
       await this.page.waitForFunction(() => {
         const loadingIndicator = document.querySelector('.loading-indicator');
-        const isLoading = loadingIndicator && 
-                         window.getComputedStyle(loadingIndicator).display !== 'none';
-        return !isLoading;
+        return !loadingIndicator || window.getComputedStyle(loadingIndicator).display === 'none';
       }, { timeout: constants.defaultTimeout });
       
       // Additional wait for DOM updates
