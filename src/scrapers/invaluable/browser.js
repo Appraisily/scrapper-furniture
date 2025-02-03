@@ -13,23 +13,56 @@ class BrowserManager {
   async initialize() {
     if (!this.browser) {
       console.log('Initializing browser...');
-      const width = 1920;
-      const height = 1080;
+      const width = 1920 + Math.floor(Math.random() * 100);
+      const height = 1080 + Math.floor(Math.random() * 100);
 
       this.browser = await puppeteer.launch({
         headless: 'new',
         args: [
           ...browserConfig.args,
           `--window-size=${width},${height}`,
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process'
+          '--enable-javascript',
+          '--enable-features=NetworkService,NetworkServiceInProcess',
+          '--disable-blink-features=AutomationControlled'
         ]
       });
 
       this.page = await this.browser.newPage();
       
-      // Set consistent viewport
-      await this.page.setViewport({ width, height });
+      // Set viewport with device scale factor for better rendering
+      await this.page.setViewport({ 
+        width,
+        height,
+        deviceScaleFactor: 1,
+        hasTouch: false,
+        isLandscape: true,
+        isMobile: false
+      });
+
+      // Enable request interception for resource types
+      await this.page.setRequestInterception(true);
+      this.page.on('request', request => {
+        const resourceType = request.resourceType();
+        const url = request.url();
+        
+        // Block unnecessary resources
+        if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
+          request.abort();
+          return;
+        }
+
+        // Allow CSS and other essential resources
+        if (resourceType === 'stylesheet' || 
+            resourceType === 'script' || 
+            resourceType === 'document' || 
+            resourceType === 'xhr' || 
+            resourceType === 'fetch') {
+          request.continue();
+          return;
+        }
+
+        request.continue();
+      });
       
       // Override navigator.webdriver
       await this.page.evaluateOnNewDocument(() => {
@@ -54,18 +87,68 @@ class BrowserManager {
         Object.defineProperty(navigator, 'plugins', {
           get: () => [
             {
-              0: {type: 'application/x-google-chrome-pdf'},
+              0: { type: 'application/x-google-chrome-pdf' },
               description: 'Portable Document Format',
               filename: 'internal-pdf-viewer',
               length: 1,
               name: 'Chrome PDF Plugin'
+            },
+            {
+              0: { type: 'application/pdf' },
+              description: 'Portable Document Format',
+              filename: 'internal-pdf-viewer',
+              length: 1,
+              name: 'Chrome PDF Viewer'
+            },
+            {
+              0: { type: 'application/x-nacl' },
+              description: 'Native Client',
+              filename: 'internal-nacl-plugin',
+              length: 1,
+              name: 'Native Client'
             }
           ]
         });
+        
+        // Add WebGL support
+        HTMLCanvasElement.prototype.getContext = ((original) => {
+          return function(type, attributes) {
+            if (type === 'webgl' || type === 'experimental-webgl') {
+              attributes = Object.assign({}, attributes, {
+                preserveDrawingBuffer: true
+              });
+            }
+            return original.call(this, type, attributes);
+          };
+        })(HTMLCanvasElement.prototype.getContext);
       });
       
       await this.page.setExtraHTTPHeaders(browserConfig.headers);
       await this.page.setUserAgent(browserConfig.userAgent);
+
+      // Add additional browser features
+      await this.page.evaluateOnNewDocument(() => {
+        // Add WebRTC support
+        window.RTCPeerConnection = class RTCPeerConnection {
+          constructor() { }
+          createDataChannel() { return {}; }
+          createOffer() { return Promise.resolve({}); }
+          setLocalDescription() { return Promise.resolve(); }
+        };
+
+        // Add media devices
+        navigator.mediaDevices = {
+          enumerateDevices: async () => []
+        };
+
+        // Add battery API
+        navigator.getBattery = async () => ({
+          charging: true,
+          chargingTime: 0,
+          dischargingTime: Infinity,
+          level: 0.95
+        });
+      });
       
       // Add random mouse movements and scrolling
       await this.addHumanBehavior(this.page);
