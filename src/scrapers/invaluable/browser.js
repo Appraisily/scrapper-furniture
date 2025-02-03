@@ -42,25 +42,14 @@ class BrowserManager {
       // Enable request interception for resource types
       await this.page.setRequestInterception(true);
       this.page.on('request', request => {
-        const resourceType = request.resourceType();
         const url = request.url();
         
-        // Block unnecessary resources
-        if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
+        // Only block image resources to reduce bandwidth while keeping functionality
+        if (request.resourceType() === 'image') {
           request.abort();
           return;
         }
-
-        // Allow CSS and other essential resources
-        if (resourceType === 'stylesheet' || 
-            resourceType === 'script' || 
-            resourceType === 'document' || 
-            resourceType === 'xhr' || 
-            resourceType === 'fetch') {
-          request.continue();
-          return;
-        }
-
+        
         request.continue();
       });
       
@@ -69,6 +58,19 @@ class BrowserManager {
         Object.defineProperty(navigator, 'webdriver', {
           get: () => undefined
         });
+
+        // Enable JavaScript features
+        window.addEventListener = ((original) => {
+          return function(type, listener, options) {
+            if (type === 'load') {
+              setTimeout(() => {
+                listener.call(this);
+              }, 500);
+              return;
+            }
+            return original.call(this, type, listener, options);
+          };
+        })(window.addEventListener);
         
         // Add modern browser features
         window.chrome = {

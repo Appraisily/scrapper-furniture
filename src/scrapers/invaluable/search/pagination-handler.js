@@ -43,31 +43,54 @@ class PaginationHandler {
   async clickLoadMore() {
     try {
       console.log('🖱️ Clicking load more button');
+
+      // Wait for JavaScript to be ready
+      await this.page.waitForFunction(() => {
+        return typeof jQuery !== 'undefined' && jQuery.active === 0;
+      }, { timeout: constants.defaultTimeout });
       
       // Scroll to button with human-like behavior
       await this.page.evaluate(() => {
         const btn = document.querySelector('.load-more-btn');
         if (btn) {
           btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Trigger any scroll events
+          window.dispatchEvent(new Event('scroll'));
         }
       });
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait longer for any animations or lazy loading
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Click the button and wait for response
       const [response] = await Promise.all([
         this.page.waitForResponse(
-          response => response.url().includes('catResults'),
+          response => response.url().includes('catResults') && response.status() === 200,
           { timeout: constants.defaultTimeout }
         ),
-        this.page.click('.load-more-btn')
+        this.page.evaluate(() => {
+          const btn = document.querySelector('.load-more-btn');
+          if (btn && !btn.disabled) {
+            // Trigger events in the correct order
+            btn.dispatchEvent(new MouseEvent('mousedown'));
+            btn.dispatchEvent(new MouseEvent('mouseup'));
+            btn.dispatchEvent(new MouseEvent('click'));
+            return true;
+          }
+          return false;
+        })
       ]);
       
       // Wait for new items to render
       await this.page.waitForFunction(() => {
         const loadingIndicator = document.querySelector('.loading-indicator');
-        return !loadingIndicator || loadingIndicator.style.display === 'none';
+        const isLoading = loadingIndicator && 
+                         window.getComputedStyle(loadingIndicator).display !== 'none';
+        return !isLoading;
       }, { timeout: constants.defaultTimeout });
+      
+      // Additional wait for DOM updates
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Get updated count
       const newCount = await this.getInitialCount();
