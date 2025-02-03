@@ -107,7 +107,7 @@ class SearchManager {
         }
 
         // Clean up listeners
-        page.removeListener('request', requestHandler);
+        page.removeAllListeners('request');
         page.removeAllListeners('response');
         apiMonitor.reset();
       }
