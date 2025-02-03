@@ -71,6 +71,7 @@ class SearchManager {
       
       let initialHtml = null;
       let protectionHtml = null;
+      let finalHtml = null;
       
       console.log('🌐 Step 4: Navigating to furniture search URL');
 
@@ -137,7 +138,7 @@ class SearchManager {
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
         console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
-        
+
         // Handle pagination
         console.log('🔄 Step 9: Checking for more results');
         const paginationHandler = new PaginationHandler(page);
