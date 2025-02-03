@@ -14,7 +14,9 @@ class SearchManager {
   loadAuctionHouses() {
     try {
       const auctionData = fs.readFileSync(path.join(__dirname, '../../auction.txt'), 'utf8');
-      return JSON.parse(auctionData);
+      const houses = JSON.parse(auctionData);
+      console.log(`Loaded ${houses.length} auction houses`);
+      return houses;
     } catch (error) {
       console.error('Error loading auction houses:', error);
       return [];
@@ -116,14 +118,19 @@ class SearchManager {
       const lastIndex = await storage.getLastProcessedIndex();
       const nextIndex = lastIndex + 1;
       
+      // Update index immediately before processing
+      await storage.updateProcessedIndex(nextIndex);
+      
       // Check if we've processed all houses
       if (nextIndex >= this.auctionHouses.length) {
         console.log('All auction houses have been processed');
-        return { status: 'completed', message: 'All auction houses processed' };
+        return { 
+          apiData: { responses: [] },
+          timestamp: new Date().toISOString(),
+          status: 'completed',
+          message: 'All auction houses processed'
+        };
       }
-      
-      // Update index immediately before processing
-      await storage.updateProcessedIndex(nextIndex);
       
       const house = this.auctionHouses[nextIndex];
       console.log(`Processing auction house ${nextIndex}:`, house.name);
