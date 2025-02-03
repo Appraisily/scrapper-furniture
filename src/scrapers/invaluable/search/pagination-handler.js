@@ -52,22 +52,26 @@ class PaginationHandler {
         }
       });
       
-      await this.page.waitForTimeout(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Click the button
-      await this.page.click('.load-more-btn');
-      
-      // Wait for new items to load
-      await this.page.waitForResponse(
-        response => response.url().includes('catResults'),
-        { timeout: constants.defaultTimeout }
-      );
+      // Click the button and wait for response
+      const [response] = await Promise.all([
+        this.page.waitForResponse(
+          response => response.url().includes('catResults'),
+          { timeout: constants.defaultTimeout }
+        ),
+        this.page.click('.load-more-btn')
+      ]);
       
       // Wait for new items to render
       await this.page.waitForFunction(() => {
         const loadingIndicator = document.querySelector('.loading-indicator');
         return !loadingIndicator || loadingIndicator.style.display === 'none';
       }, { timeout: constants.defaultTimeout });
+      
+      // Get updated count
+      const newCount = await this.getInitialCount();
+      console.log(`  • New item count: ${newCount}`);
       
       return true;
     } catch (error) {
@@ -76,3 +80,5 @@ class PaginationHandler {
     }
   }
 }
+
+module.exports = PaginationHandler;
