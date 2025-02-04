@@ -1,11 +1,11 @@
 # Invaluable Furniture Scraper
 
-A specialized Node.js web scraper for extracting furniture auction data from Invaluable.com. Built with Puppeteer, Express, and advanced features including dynamic price range optimization and real-time data persistence.
+A specialized Node.js web scraper for extracting furniture auction data from Invaluable.com. Built with Puppeteer, Express, and featuring an intelligent dynamic price range system that automatically optimizes data extraction based on auction house size and response characteristics.
 
 ## Overview
 
 This scraper is designed to capture both HTML content and API responses from Invaluable's furniture auction listings, with specific focus on:
-- Intelligent price range segmentation
+- Dynamic price range optimization
 - Real-time data persistence
 - Protection/challenge handling
 - Comprehensive API response capture
@@ -16,10 +16,19 @@ This scraper is designed to capture both HTML content and API responses from Inv
 ### Core Functionality
 - **Dynamic Price Range Optimization**
   - Automatic range splitting based on response size
-  - Progressive range adjustment
-  - Empty range detection
-  - Response size monitoring
-  - Intelligent segmentation based on auction house size
+  - Smart initial segmentation:
+    - Small auctions (≤1,000 items): 3 segments
+    - Medium auctions (≤5,000 items): 5 segments
+    - Large auctions (>5,000 items): 8 segments
+  - Adaptive splitting logic:
+    - Splits ranges when response size >600KB
+    - Preserves ranges when response size <90KB (empty/near-empty)
+    - Progressive doubling for unlimited ranges
+  - Response optimization:
+    - Size-based monitoring
+    - Empty range detection
+    - Duplicate response filtering
+    - Hash-based deduplication
 
 - **Real-time Data Persistence**
   - Immediate response saving
@@ -75,12 +84,20 @@ This scraper is designed to capture both HTML content and API responses from Inv
 #### Price Range Optimization
 - Initial segmentation based on auction house size:
   - Small auctions (≤1000 items): 3 segments
-  - Medium auctions (≤5000 items): 5 segments
-  - Large auctions (>5000 items): 8 segments
+  - Medium auctions (≤5,000 items): 5 segments
+  - Large auctions (>5,000 items): 8 segments
 - Dynamic splitting based on response size:
-  - Split if response >600KB
-  - Keep if response <90KB (empty/near-empty)
-  - Progressive doubling for unlimited ranges
+  - Response size thresholds:
+    - >600KB: Split range into smaller segments
+    - <90KB: Keep range (indicates empty/near-empty results)
+    - Between thresholds: Keep if has upper limit
+  - Splitting strategies:
+    - Limited ranges: Split at midpoint
+    - Unlimited ranges: Double previous minimum
+  - Recursive optimization:
+    - Each split range is re-evaluated
+    - Process continues until optimal sizes achieved
+    - Maintains data quality while minimizing requests
 
 ## Prerequisites
 
@@ -183,16 +200,31 @@ Example Response:
 The scraper follows these steps (with detailed logging):
 
 1. 🔄 Initialize search process
-2. 📊 Load auction house data
-3. 🎯 Generate initial price ranges
-4. For each price range:
-   - 📏 Check response size
-   - 🔄 Split range if needed
-   - 🌐 Make API request
-   - 📥 Capture response
-   - 💾 Save immediately
-   - 📝 Update metadata
-5. ✅ Complete process
+2. 📊 Analyze auction house size
+3. 🎯 Generate initial price ranges based on size:
+   - Small: 3 segments
+   - Medium: 5 segments
+   - Large: 8 segments
+4. 🔄 For each initial range:
+   - 📏 Test response size
+   - If >600KB:
+     - Split range at midpoint or double minimum
+     - Recursively test new ranges
+   - If <90KB:
+     - Keep range (empty/near-empty)
+   - If between thresholds:
+     - Keep if has upper limit
+     - Split if unlimited
+5. 🌐 For each optimized range:
+   - Make API request
+   - Capture response
+   - Filter duplicates
+   - Save data
+6. 📊 Generate final report with:
+   - Total responses
+   - Range statistics
+   - Coverage analysis
+7. ✅ Complete process
 
 ## Deployment
 

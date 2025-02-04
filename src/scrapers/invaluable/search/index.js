@@ -199,10 +199,8 @@ class SearchManager {
   async searchFurniture(cookies) {
     try {
       console.log('🔄 Starting furniture search process');
-      const storage = require('../../../utils/storage');
-      const allResponses = [];
-
       // Get last processed index from storage
+      const storage = require('../../../utils/storage');
       const lastIndex = await storage.getLastProcessedIndex();
       const nextIndex = 0; // Always use first auction house for testing
       
@@ -223,60 +221,12 @@ class SearchManager {
       const house = this.auctionHouses[nextIndex];
       console.log(`Processing auction house ${nextIndex}:`, house.name);
       
-      // Create a single tab for all requests
-      const page = await this.browserManager.createTab('search');
-      const apiMonitor = new ApiMonitor();
-      
-      // Configure page
-      await page.setBypassCSP(true);
-      await page.setRequestInterception(true);
-      await page.setExtraHTTPHeaders({
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      });
-      
-      // Set up request handling
-      page.on('request', request => {
-        try {
-          const reqUrl = request.url();
-          const headers = request.headers();
-          
-          // Add cookies to all requests
-          headers['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-          
-          if (reqUrl.includes('catResults')) {
-            headers['Accept'] = 'application/json';
-            headers['Content-Type'] = 'application/json';
-            console.log('  • Intercepted API request:', reqUrl);
-          }
-          
-          // Block unnecessary resources
-          if (request.resourceType() === 'image' || 
-              request.resourceType() === 'stylesheet' || 
-              request.resourceType() === 'font') {
-            request.abort();
-            return;
-          }
-          
-          request.continue({ headers });
-        } catch (error) {
-          if (!error.message.includes('Request is already handled')) {
-            console.error('Request handling error:', error);
-          }
-          request.continue();
-        }
-      });
-      
-      page.on('response', apiMonitor.handleResponse.bind(apiMonitor));
-      
-      // Set cookies
-      await page.setCookie(...cookies);
-      
       // Get initial price ranges
       const initialRanges = this.priceRanges.get(house.name);
       console.log(`Initial ranges for ${house.name}:`, initialRanges.length);
+      
+      const allResponses = [];
+      const finalRanges = [];
       
       // Process each range
       for (const [index, range] of initialRanges.entries()) {
@@ -284,6 +234,114 @@ class SearchManager {
         console.log(`  • Price Range: $${range.min} - ${range.max ? '$' + range.max : 'No limit'}`);
         
         const url = this.constructSearchUrl(house, range);
+        
+        // Split range if needed and get optimized ranges
+        console.log('🔄 Checking if range needs splitting');
+        const optimizedRanges = await this.splitRangeIfNeeded(url, range, house);
+        console.log(`  • Range produced ${optimizedRanges.length} optimized ranges`);
+        
+        // Process each optimized range
+        for (const optimizedRange of optimizedRanges) {
+          const optimizedUrl = this.constructSearchUrl(house, optimizedRange);
+          console.log(`\n  • Processing optimized range: $${optimizedRange.min}-${optimizedRange.max ? '$' + optimizedRange.max : 'unlimited'}`);
+          
+          // Create a new tab for this range
+          const tabName = `range-${optimizedRange.min}-${optimizedRange.max || 'unlimited'}`;
+          const page = await this.browserManager.createTab(tabName);
+          const apiMonitor = new ApiMonitor();
+          
+          try {
+            // Configure page
+            await page.setBypassCSP(true);
+            await page.setRequestInterception(true);
+            await page.setExtraHTTPHeaders({
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1'
+            });
+            
+            // Set up request handling
+            page.on('request', request => {
+              try {
+                const reqUrl = request.url();
+                const headers = request.headers();
+                
+                // Add cookies to all requests
+                headers['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+                
+                if (reqUrl.includes('catResults')) {
+                  headers['Accept'] = 'application/json';
+                  headers['Content-Type'] = 'application/json';
+                  console.log('    • Intercepted API request:', reqUrl);
+                }
+                
+                // Block unnecessary resources
+                if (request.resourceType() === 'image' || 
+                    request.resourceType() === 'stylesheet' || 
+                    request.resourceType() === 'font') {
+                  request.abort();
+                  return;
+                }
+                
+                request.continue({ headers });
+              } catch (error) {
+                if (!error.message.includes('Request is already handled')) {
+                  console.error('Request handling error:', error);
+                }
+                request.continue();
+              }
+            });
+            
+            page.on('response', apiMonitor.handleResponse.bind(apiMonitor));
+            
+            // Set cookies
+            await page.setCookie(...cookies);
+            
+            console.log('    🌐 Navigating to URL:', optimizedUrl);
+            await page.goto(optimizedUrl, {
+              waitUntil: 'networkidle2',
+              timeout: constants.navigationTimeout
+            });
+            
+            // Random delay between requests
+            await this.delay(page);
+            
+            // Get responses for this range
+            const urlResponses = apiMonitor.getData();
+            if (urlResponses.responses.length > 0) {
+              console.log(`    ✅ Captured ${urlResponses.responses.length} API responses`);
+              allResponses.push(...urlResponses.responses);
+              finalRanges.push(optimizedRange);
+            } else {
+              console.log('    ⚠️ No API responses captured for this range');
+            }
+          } catch (error) {
+            console.error('    ❌ Error processing range:', error.message);
+          } finally {
+            await this.browserManager.closeTab(tabName);
+          }
+        }
+      }
+
+      console.log(`\n📊 Final Results:`);
+      console.log(`  • Total API responses: ${allResponses.length}`);
+      console.log(`  • Total ranges processed: ${finalRanges.length}`);
+
+      return {
+        apiData: { responses: allResponses },
+        timestamp: new Date().toISOString(),
+        auctionHouse: house,
+        priceRanges: finalRanges
+      };
+    } catch (error) {
+      console.error('Furniture search error:', error);
+      throw error;
+    }
+  }
+}
+
+module.exports = SearchManager;
         try {
           console.log('🌐 Navigating to URL:', url);
           

@@ -70,12 +70,12 @@ class CloudStorage {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const houseName = metadata.auctionHouse.name
+      const houseName = metadata.auctionHouse?.name || 'unknown'
         .replace(/[^a-zA-Z0-9-]/g, '_')
         .replace(/_{2,}/g, '_')
         .replace(/^_|_$/g, '');
       const baseFolder = `furniture/${houseName}`;
-      console.log('📁 Saving files for auction house:', metadata.auctionHouse.name);
+      console.log('📁 Saving files for auction house:', houseName);
       console.log('  • Base folder:', baseFolder);
       
       metadata.files = {};
@@ -101,7 +101,7 @@ class CloudStorage {
               priceRange: rangeStr,
               min: range.min,
               max: range.max || 'unlimited',
-              houseName: metadata.auctionHouse.name
+              houseName: houseName
             }
           });
           
@@ -128,7 +128,7 @@ class CloudStorage {
         contentType: 'application/json',
         metadata: {
           type: 'metadata',
-          houseName: metadata.auctionHouse.name,
+          houseName: houseName,
           timestamp
         }
       });
@@ -137,7 +137,7 @@ class CloudStorage {
       console.log('  Ranges processed:', Object.keys(metadata.ranges).length);
       
       return {
-        houseName: metadata.auctionHouse.name,
+        houseName: houseName,
         timestamp,
         files: metadata.files,
         ranges: metadata.ranges,
