@@ -4,12 +4,7 @@ class ApiMonitor {
   constructor() {
     this.reset();
   }
-
-  getFirstResponseSize() {
-    return this.firstResponseSize;
-  }
-
-
+  
   reset() {
     this.responses = [];
     this.seenResponses = new Set();
@@ -25,11 +20,12 @@ class ApiMonitor {
         const responseData = await response.text();
         
         if (responseData.length < 1000) {
-          console.log('    - Skipping small response:', responseData.length, 'bytes');
+          console.log('    - Skipping small response:', (responseData.length / 1024).toFixed(2), 'KB');
           return;
-        } else {
-          console.log('    - Response size:', (responseData.length / 1024).toFixed(2), 'KB');
         }
+
+        const sizeKB = responseData.length / 1024;
+        console.log('    - Response size:', sizeKB.toFixed(2), 'KB');
         
         const responseHash = this.hashResponse(responseData);
 
@@ -39,14 +35,13 @@ class ApiMonitor {
         }
 
         this.seenResponses.add(responseHash);
-        console.log('    - New unique response:', (responseData.length / 1024).toFixed(2), 'KB');
+        console.log('    - New unique response:', sizeKB.toFixed(2), 'KB');
 
         // Always capture responses over 1KB
         if (responseData.length > 1000) {
           this.responses.push(responseData);
           console.log('    - Saved as first response');
-          // Store first response size in KB
-          this.firstResponseSize = responseData.length / 1024;
+          // Store first response size in bytes
           this.firstResponseSize = responseData.length;
         }
       }
@@ -62,7 +57,8 @@ class ApiMonitor {
   }
 
   getFirstResponseSize() {
-    return this.firstResponseSize;
+    // Return size in KB
+    return this.firstResponseSize / 1024;
   }
   
   getData() {
