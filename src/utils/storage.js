@@ -65,29 +65,32 @@ class CloudStorage {
   async saveSearchData(html, metadata) {
     try {
       if (!this.initialized) {
-        console.log('💾 Initializing storage...');
+        console.log('💾 Initializing storage');
         await this.initialize();
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const houseName = metadata.auctionHouse.name.replace(/[^a-zA-Z0-9-]/g, '_');
-      const baseFolder = `Furniture/${houseName}`;
+      const houseName = metadata.auctionHouse.name
+        .replace(/[^a-zA-Z0-9-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_|_$/g, '');
+      const baseFolder = `furniture/${houseName}`;
       console.log('📁 Saving files for auction house:', metadata.auctionHouse.name);
+      console.log('  • Base folder:', baseFolder);
       
       metadata.files = {};
       metadata.ranges = {};
 
-      // Save API responses by price range
       if (html.apiData?.responses?.length > 0) {
         console.log('  • Processing API responses');
         
         for (let i = 0; i < html.apiData.responses.length; i++) {
           const response = html.apiData.responses[i];
           const range = metadata.priceRanges[i];
-          const rangeStr = `${range.min}-${range.max}`;
+          const rangeStr = `${range.min}-${range.max || 'unlimited'}`;
           
-          // Save original response
-          const filename = `${baseFolder}/${rangeStr}-${timestamp}.json`;
+          // Create a clean filename
+          const filename = `${baseFolder}/responses/${rangeStr}/${timestamp}.json`;
           console.log(`    - Saving range ${rangeStr}:`, (response.length / 1024).toFixed(2), 'KB');
           
           const file = this.storage.bucket(this.bucketName).file(filename);
@@ -96,7 +99,8 @@ class CloudStorage {
             metadata: {
               type: 'api_response',
               priceRange: rangeStr,
-              timestamp,
+              min: range.min,
+              max: range.max || 'unlimited',
               houseName: metadata.auctionHouse.name
             }
           });
@@ -118,7 +122,7 @@ class CloudStorage {
       }
       
       console.log('  • Saving metadata');
-      const metadataFilename = `${baseFolder}/metadata-${timestamp}.json`;
+      const metadataFilename = `${baseFolder}/metadata/${timestamp}.json`;
       const metadataFile = this.storage.bucket(this.bucketName).file(metadataFilename);
       await metadataFile.save(JSON.stringify(metadata, null, 2), {
         contentType: 'application/json',
