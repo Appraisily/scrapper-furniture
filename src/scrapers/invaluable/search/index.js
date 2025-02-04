@@ -280,7 +280,7 @@ class SearchManager {
       
       // Process each range
       for (const [index, range] of initialRanges.entries()) {
-        console.log(`\n🔄 Processing URL ${index + 1}/${searchUrls.length}`);
+        console.log(`\n🔄 Processing URL ${index + 1}/${initialRanges.length}`);
         console.log(`  • Price Range: $${range.min} - ${range.max ? '$' + range.max : 'No limit'}`);
         
         const url = this.constructSearchUrl(house, range);
