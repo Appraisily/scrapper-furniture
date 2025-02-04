@@ -54,19 +54,20 @@ class SearchManager {
 
   generateBaseRanges(min, max, segments) {
     const ranges = [];
-    const step = Math.floor((max - min) / segments);
+    const step = Math.floor((max - min) / (segments - 1));
     
-    for (let i = 0; i < segments - 1; i++) {
+    // Create initial ranges with upper limits
+    for (let i = 0; i < segments - 2; i++) {
       ranges.push({
         min: min + (step * i),
         max: min + (step * (i + 1))
       });
     }
     
-    // Add final range to max
+    // Add final range with no upper limit
     ranges.push({
-      min: min + (step * (segments - 1)),
-      max: max
+      min: min + (step * (segments - 2)),
+      max: null
     });
     
     return ranges;
@@ -75,7 +76,7 @@ class SearchManager {
   async splitRangeIfNeeded(url, range, house) {
     try {
       // Create a new tab and check response size
-      const tabName = `range-check-${range.min}-${range.max}`;
+      const tabName = `range-check-${range.min}-${range.max || 'unlimited'}`;
       const page = await this.browserManager.createTab(tabName);
       const apiMonitor = new ApiMonitor();
       
@@ -107,42 +108,55 @@ class SearchManager {
         });
 
         const responseSize = apiMonitor.getFirstResponseSize();
-        console.log(`  • Response size for range $${range.min}-$${range.max}: ${responseSize.toFixed(2)} KB`);
+        console.log(`  • Response size for range $${range.min}-${range.max ? '$' + range.max : 'unlimited'}: ${responseSize.toFixed(2)} KB`);
       
-        // If range difference is $1 or response size is under 600KB, keep range
-        if (range.max - range.min <= 1 || responseSize < 600) {
-          console.log(`  • Range $${range.min}-$${range.max}: ${responseSize.toFixed(2)}KB (keeping)`);
+        // If response size is under 90KB, we've hit an empty or near-empty range
+        if (responseSize < 90) {
+          console.log(`  • Range $${range.min}-${range.max ? '$' + range.max : 'unlimited'}: ${responseSize.toFixed(2)}KB (empty/near-empty, keeping)`);
           return [range];
         }
 
-        console.log(`  • Range $${range.min}-$${range.max}: ${responseSize.toFixed(2)}KB (splitting)`);
+        // If response size is under 600KB and we have an upper limit, keep range
+        if (range.max && responseSize < 600) {
+          console.log(`  • Range $${range.min}-$${range.max}: ${responseSize.toFixed(2)}KB (under limit, keeping)`);
+          return [range];
+        }
+
+        console.log(`  • Range $${range.min}-${range.max ? '$' + range.max : 'unlimited'}: ${responseSize.toFixed(2)}KB (splitting)`);
         
-        // Split range in half
-        const mid = Math.floor((range.max + range.min) / 2);
-        const lowerRange = { min: range.min, max: mid };
-        const upperRange = { min: mid, max: range.max };
+        let newRanges;
+        if (range.max === null) {
+          // For unlimited ranges, double the previous min to create new max
+          const newMax = range.min * 2;
+          newRanges = [
+            { min: range.min, max: newMax },
+            { min: newMax, max: null }
+          ];
+        } else {
+          // For limited ranges, split in half
+          const mid = Math.floor((range.max + range.min) / 2);
+          newRanges = [
+            { min: range.min, max: mid },
+            { min: mid, max: range.max }
+          ];
+        }
         
-        // Recursively split both halves
-        const lowerRanges = await this.splitRangeIfNeeded(
-          this.constructSearchUrl(house, lowerRange),
-          lowerRange,
-          house
-        );
+        // Process each new range
+        let splitRanges = [];
+        for (const newRange of newRanges) {
+          const newUrl = this.constructSearchUrl(house, newRange);
+          const processedRanges = await this.splitRangeIfNeeded(newUrl, newRange, house);
+          splitRanges.push(...processedRanges);
+        }
         
-        const upperRanges = await this.splitRangeIfNeeded(
-          this.constructSearchUrl(house, upperRange),
-          upperRange,
-          house
-        );
-        
-        return [...lowerRanges, ...upperRanges];
+        return splitRanges;
       } finally {
         await this.browserManager.closeTab(tabName);
       }
     } catch (error) {
       console.error('Error splitting range:', error);
       // If we encounter an error, return the original range
-      console.log(`  • Keeping original range due to error: $${range.min}-$${range.max}`);
+      console.log(`  • Keeping original range due to error: $${range.min}-${range.max ? '$' + range.max : 'unlimited'}`);
       return [range];
     }
   }
@@ -185,9 +199,9 @@ class SearchManager {
   async searchFurniture(cookies) {
     try {
       console.log('🔄 Starting furniture search process');
+      const storage = require('../../../utils/storage');
 
       // Get last processed index from storage
-      const storage = require('../../../utils/storage');
       const lastIndex = await storage.getLastProcessedIndex();
       const nextIndex = 0; // Always use first auction house for testing
       
@@ -207,6 +221,16 @@ class SearchManager {
       
       const house = this.auctionHouses[nextIndex];
       console.log(`Processing auction house ${nextIndex}:`, house.name);
+      
+      // Initialize metadata
+      const metadata = {
+        timestamp: new Date().toISOString(),
+        auctionHouse: house,
+        priceRanges: [],
+        urls: [],
+        files: {},
+        ranges: {}
+      };
       
       // Get initial price ranges
       let initialRanges = this.priceRanges.get(house.name);
@@ -232,8 +256,8 @@ class SearchManager {
       searchUrls.forEach(({ range }, index) => {
         console.log(`  Range ${index + 1}: $${range.min} - $${range.max}`);
       });
-
-      const allResponses = [];
+      
+      metadata.urls = searchUrls.map(({ url }) => url);
 
       for (const [index, { url, range }] of searchUrls.entries()) {
         console.log(`\n🔄 Processing URL ${index + 1}/${searchUrls.length}`);
@@ -302,14 +326,64 @@ class SearchManager {
             waitUntil: 'networkidle2',
             timeout: constants.navigationTimeout
           });
-
+          
           // Random delay between requests
           await this.delay(page);
-
+          
           const urlResponses = apiMonitor.getData();
           if (urlResponses.responses.length > 0) {
             console.log(`✅ Captured ${urlResponses.responses.length} API responses`);
-            allResponses.push(...urlResponses.responses);
+            
+            // Save responses immediately
+            const rangeStr = `${range.min}-${range.max || 'unlimited'}`;
+            metadata.priceRanges.push(range);
+            
+            // Save each response
+            for (const response of urlResponses.responses) {
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const houseName = house.name.replace(/[^a-zA-Z0-9-]/g, '_');
+              const baseFolder = `Furniture/${houseName}`;
+              const filename = `${baseFolder}/${rangeStr}-${timestamp}.json`;
+              
+              console.log(`    - Saving response for range ${rangeStr}:`, (response.length / 1024).toFixed(2), 'KB');
+              
+              const file = storage.storage.bucket(storage.bucketName).file(filename);
+              await file.save(response, {
+                contentType: 'application/json',
+                metadata: {
+                  type: 'api_response',
+                  priceRange: rangeStr,
+                  timestamp,
+                  houseName: house.name
+                }
+              });
+              
+              // Track files by range
+              if (!metadata.files[rangeStr]) {
+                metadata.files[rangeStr] = [];
+              }
+              metadata.files[rangeStr].push(filename);
+              
+              // Track range metadata
+              metadata.ranges[rangeStr] = {
+                min: range.min,
+                max: range.max,
+                responseSize: response.length,
+                timestamp
+              };
+              
+              // Save updated metadata after each response
+              const metadataFilename = `Furniture/${houseName}/metadata-${timestamp}.json`;
+              const metadataFile = storage.storage.bucket(storage.bucketName).file(metadataFilename);
+              await metadataFile.save(JSON.stringify(metadata, null, 2), {
+                contentType: 'application/json',
+                metadata: {
+                  type: 'metadata',
+                  houseName: house.name,
+                  timestamp
+                }
+              });
+            }
           } else {
             console.log('⚠️ No API responses captured for this URL');
           }
@@ -323,15 +397,10 @@ class SearchManager {
       }
 
       console.log(`\n📊 Final Results:`);
-      console.log(`  • Total API responses: ${allResponses.length}`);
+      console.log(`  • Total ranges processed: ${Object.keys(metadata.ranges).length}`);
+      console.log(`  • Total files saved: ${Object.values(metadata.files).flat().length}`);
 
-      return {
-        apiData: { responses: allResponses },
-        timestamp: new Date().toISOString(),
-        auctionHouse: house,
-        priceRanges: searchUrls.map(({ range }) => range),
-        urls: searchUrls.map(({ url }) => url)
-      };
+      return metadata;
     } catch (error) {
       console.error('Furniture search error:', error);
       throw error;
