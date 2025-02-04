@@ -65,59 +65,78 @@ class CloudStorage {
   async saveSearchData(html, metadata) {
     try {
       if (!this.initialized) {
-        console.log('💾 Initializing storage');
+        console.log('💾 Initializing storage...');
         await this.initialize();
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const baseFolder = 'Furniture';
-      const searchId = `${metadata.source}-furniture-${timestamp}`;
-      console.log('📁 Starting file saves');
-      console.log('  • Search ID:', searchId);
+      const houseName = metadata.auctionHouse.name.replace(/[^a-zA-Z0-9-]/g, '_');
+      const baseFolder = `Furniture/${houseName}`;
+      console.log('📁 Saving files for auction house:', metadata.auctionHouse.name);
       
       metadata.files = {};
+      metadata.ranges = {};
 
-      // Save API responses
-      metadata.files.api = [];
+      // Save API responses by price range
       if (html.apiData?.responses?.length > 0) {
-        console.log('  • Saving API responses');
+        console.log('  • Processing API responses');
+        
         for (let i = 0; i < html.apiData.responses.length; i++) {
           const response = html.apiData.responses[i];
+          const range = metadata.priceRanges[i];
+          const rangeStr = `${range.min}-${range.max}`;
           
-          const filename = `${baseFolder}/api/${searchId}-response${i + 1}.json`;
+          // Save original response
+          const filename = `${baseFolder}/${rangeStr}-${timestamp}.json`;
+          console.log(`    - Saving range ${rangeStr}:`, (response.length / 1024).toFixed(2), 'KB');
+          
           const file = this.storage.bucket(this.bucketName).file(filename);
           await file.save(response, {
             contentType: 'application/json',
             metadata: {
               type: 'api_response',
-              responseNumber: `${i + 1}`,
-              searchId
+              priceRange: rangeStr,
+              timestamp,
+              houseName: metadata.auctionHouse.name
             }
           });
-          metadata.files.api.push(filename);
-          console.log(`    - Response ${i + 1}: ${(response.length / 1024).toFixed(2)} KB`);
+          
+          // Track files by range
+          if (!metadata.files[rangeStr]) {
+            metadata.files[rangeStr] = [];
+          }
+          metadata.files[rangeStr].push(filename);
+          
+          // Track range metadata
+          metadata.ranges[rangeStr] = {
+            min: range.min,
+            max: range.max,
+            responseSize: response.length,
+            timestamp
+          };
         }
       }
       
       console.log('  • Saving metadata');
-      const metadataFilename = `${baseFolder}/metadata/${searchId}.json`;
+      const metadataFilename = `${baseFolder}/metadata-${timestamp}.json`;
       const metadataFile = this.storage.bucket(this.bucketName).file(metadataFilename);
       await metadataFile.save(JSON.stringify(metadata, null, 2), {
         contentType: 'application/json',
         metadata: {
           type: 'metadata',
-          searchId
+          houseName: metadata.auctionHouse.name,
+          timestamp
         }
       });
 
       console.log('✅ All files saved successfully');
-      console.log('  Files saved:');
-      console.log('    - API:', metadata.files.api.length, 'responses');
-      console.log('    - Metadata: 1 file');
+      console.log('  Ranges processed:', Object.keys(metadata.ranges).length);
       
       return {
-        searchId,
+        houseName: metadata.auctionHouse.name,
+        timestamp,
         files: metadata.files,
+        ranges: metadata.ranges,
         metadataPath: metadataFilename
       };
     } catch (error) {

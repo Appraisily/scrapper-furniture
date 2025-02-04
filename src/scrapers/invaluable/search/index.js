@@ -14,7 +14,8 @@ class SearchManager {
   loadAuctionHouses() {
     try {
       const auctionData = fs.readFileSync(path.join(process.cwd(), 'src/auction.txt'), 'utf8');
-      const houses = JSON.parse(auctionData);
+      // Only take the first auction house for testing
+      const houses = [JSON.parse(auctionData)[0]];
       console.log(`Loaded ${houses.length} auction houses. First house: ${houses[0].name}`);
       if (houses.length === 0) {
         throw new Error('No auction houses loaded from file');
@@ -30,69 +31,129 @@ class SearchManager {
 
   generatePriceRanges() {
     const ranges = new Map();
-    const MAX_PRICE = 10000;
+    const MAX_PRICE = 25000;
     
     for (const house of this.auctionHouses) {
-      let priceRanges;
+      console.log(`Generating initial ranges for ${house.name} (${house.count} items)`);
       
-      if (house.count > 10000) {
-        // For very large auctions (20 ranges from $250 to $10,000)
-        priceRanges = [];
-        let currentMin = 250;
-        const step = (MAX_PRICE - currentMin) / 19; // 19 steps for 20 ranges
-        for (let i = 0; i < 19; i++) {
-          const max = Math.round(currentMin + step);
-          priceRanges.push({ min: currentMin, max });
-          currentMin = max;
-        }
-        priceRanges.push({ min: currentMin, max: MAX_PRICE }); // Final range
-      } else if (house.count > 4000) {
-        // For large auctions (10 ranges from $250 to $10,000)
-        priceRanges = [];
-        let currentMin = 250;
-        const step = (MAX_PRICE - currentMin) / 9; // 9 steps for 10 ranges
-        for (let i = 0; i < 9; i++) {
-          const max = Math.round(currentMin + step);
-          priceRanges.push({ min: currentMin, max });
-          currentMin = max;
-        }
-        priceRanges.push({ min: currentMin, max: MAX_PRICE }); // Final range
-      } else if (house.count <= 1000) {
-        // For smaller auctions (like DOYLE with 585 items), use 3 segments
-        priceRanges = [
-          { min: 250, max: 500 },
-          { min: 500, max: 2500 },
-          { min: 2500, max: MAX_PRICE }
-        ];
+      // Initial base ranges based on auction house size
+      let baseRanges;
+      if (house.count <= 1000) {
+        baseRanges = this.generateBaseRanges(250, MAX_PRICE, 3);
+      } else if (house.count <= 5000) {
+        baseRanges = this.generateBaseRanges(250, MAX_PRICE, 5);
       } else {
-        // For medium-sized auctions, use 5 segments
-        priceRanges = [
-          { min: 250, max: 500 },
-          { min: 500, max: 1000 },
-          { min: 1000, max: 3000 },
-          { min: 3000, max: 6000 },
-          { min: 6000, max: MAX_PRICE }
-        ];
+        baseRanges = this.generateBaseRanges(250, MAX_PRICE, 8);
       }
       
-      // Log the generated ranges for verification
-      console.log(`Price ranges for ${house.name} (${house.count} items):`);
-      priceRanges.forEach((range, i) => {
-        console.log(`  Range ${i + 1}: $${range.min} - ${range.max ? '$' + range.max : 'No limit'}`);
-      });
-      
-      ranges.set(house.name, priceRanges);
+      ranges.set(house.name, baseRanges);
     }
     
     return ranges;
   }
 
+  generateBaseRanges(min, max, segments) {
+    const ranges = [];
+    const step = Math.floor((max - min) / segments);
+    
+    for (let i = 0; i < segments - 1; i++) {
+      ranges.push({
+        min: min + (step * i),
+        max: min + (step * (i + 1))
+      });
+    }
+    
+    // Add final range to max
+    ranges.push({
+      min: min + (step * (segments - 1)),
+      max: max
+    });
+    
+    return ranges;
+  }
+
+  async splitRangeIfNeeded(url, range, house) {
+    try {
+      // Create a new tab and check response size
+      const tabName = `range-check-${range.min}-${range.max}`;
+      const page = await this.browserManager.createTab(tabName);
+      const apiMonitor = new ApiMonitor();
+      
+      try {
+        await page.setRequestInterception(true);
+        page.on('response', apiMonitor.handleResponse.bind(apiMonitor));
+        
+        // Set up request handler
+        page.on('request', request => {
+          try {
+            if (request.resourceType() === 'image' || 
+                request.resourceType() === 'stylesheet' || 
+                request.resourceType() === 'font') {
+              request.abort();
+              return;
+            }
+            request.continue();
+          } catch (error) {
+            if (!error.message.includes('Request is already handled')) {
+              console.error('Request handling error:', error);
+            }
+            request.continue();
+          }
+        });
+
+        await page.goto(url, {
+          waitUntil: 'networkidle2',
+          timeout: constants.navigationTimeout
+        });
+
+        const responseSize = apiMonitor.getFirstResponseSize();
+        console.log(`  • Response size for range $${range.min}-$${range.max}: ${responseSize.toFixed(2)} KB`);
+      
+        // If range difference is $1 or response size is under 600KB, keep range
+        if (range.max - range.min <= 1 || responseSize < 600) {
+          console.log(`  • Range $${range.min}-$${range.max}: ${responseSize.toFixed(2)}KB (keeping)`);
+          return [range];
+        }
+
+        console.log(`  • Range $${range.min}-$${range.max}: ${responseSize.toFixed(2)}KB (splitting)`);
+        
+        // Split range in half
+        const mid = Math.floor((range.max + range.min) / 2);
+        const lowerRange = { min: range.min, max: mid };
+        const upperRange = { min: mid, max: range.max };
+        
+        // Recursively split both halves
+        const lowerRanges = await this.splitRangeIfNeeded(
+          this.constructSearchUrl(house, lowerRange),
+          lowerRange,
+          house
+        );
+        
+        const upperRanges = await this.splitRangeIfNeeded(
+          this.constructSearchUrl(house, upperRange),
+          upperRange,
+          house
+        );
+        
+        return [...lowerRanges, ...upperRanges];
+      } finally {
+        await this.browserManager.closeTab(tabName);
+      }
+    } catch (error) {
+      console.error('Error splitting range:', error);
+      // If we encounter an error, return the original range
+      console.log(`  • Keeping original range due to error: $${range.min}-$${range.max}`);
+      return [range];
+    }
+  }
+
   constructSearchUrl(auctionHouse, priceRange) {
     const baseParams = {
       supercategoryName: 'Furniture',
-      upcoming: 'false',
+      upcoming: false,
       query: 'furniture',
-      keyword: 'furniture'
+      keyword: 'furniture',
+      houseName: auctionHouse.name
     };
 
     // Add price range parameters
@@ -105,13 +166,11 @@ class SearchManager {
       baseParams['priceResult[min]'] = '250';
     }
 
-    if (auctionHouse) {
-      baseParams.houseName = auctionHouse.name;
-    }
-
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(baseParams)) {
-      searchParams.append(key, value);
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, value);
+      }
     }
 
     return `https://www.invaluable.com/search?${searchParams.toString()}`;
@@ -130,7 +189,7 @@ class SearchManager {
       // Get last processed index from storage
       const storage = require('../../../utils/storage');
       const lastIndex = await storage.getLastProcessedIndex();
-      const nextIndex = lastIndex + 1;
+      const nextIndex = 0; // Always use first auction house for testing
       
       // Update index immediately before processing
       await storage.updateProcessedIndex(nextIndex);
@@ -149,18 +208,29 @@ class SearchManager {
       const house = this.auctionHouses[nextIndex];
       console.log(`Processing auction house ${nextIndex}:`, house.name);
       
-      // Get price ranges for the auction house
-      const priceRanges = this.priceRanges.get(house.name);
+      // Get initial price ranges
+      let initialRanges = this.priceRanges.get(house.name);
+      console.log(`Initial ranges for ${house.name}:`, initialRanges.length);
+      
+      // Optimize ranges based on item counts
+      const optimizedRanges = [];
+      for (const range of initialRanges) {
+        const url = this.constructSearchUrl(house, range);
+        const splitRanges = await this.splitRangeIfNeeded(url, range, house);
+        optimizedRanges.push(...splitRanges);
+      }
+      
+      console.log(`Optimized into ${optimizedRanges.length} ranges`);
       
       // Generate URLs for each price range
-      const searchUrls = priceRanges.map(range => ({
+      const searchUrls = optimizedRanges.map(range => ({
         url: this.constructSearchUrl(house, range),
         range
       }));
       
       console.log('Generated price ranges:');
       searchUrls.forEach(({ range }, index) => {
-        console.log(`  Range ${index + 1}: $${range.min} - ${range.max ? '$' + range.max : 'No limit'}`);
+        console.log(`  Range ${index + 1}: $${range.min} - $${range.max}`);
       });
 
       const allResponses = [];
@@ -258,9 +328,9 @@ class SearchManager {
       return {
         apiData: { responses: allResponses },
         timestamp: new Date().toISOString(),
-        urls: searchUrls.map(({ url }) => url),
         auctionHouse: house,
-        priceRanges: priceRanges
+        priceRanges: searchUrls.map(({ range }) => range),
+        urls: searchUrls.map(({ url }) => url)
       };
     } catch (error) {
       console.error('Furniture search error:', error);

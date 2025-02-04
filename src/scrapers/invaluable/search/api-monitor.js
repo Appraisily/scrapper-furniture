@@ -5,6 +5,11 @@ class ApiMonitor {
     this.reset();
   }
 
+  getFirstResponseSize() {
+    return this.firstResponseSize;
+  }
+
+
   reset() {
     this.responses = [];
     this.seenResponses = new Set();
@@ -22,6 +27,8 @@ class ApiMonitor {
         if (responseData.length < 1000) {
           console.log('    - Skipping small response:', responseData.length, 'bytes');
           return;
+        } else {
+          console.log('    - Response size:', (responseData.length / 1024).toFixed(2), 'KB');
         }
         
         const responseHash = this.hashResponse(responseData);
@@ -38,6 +45,8 @@ class ApiMonitor {
         if (responseData.length > 1000) {
           this.responses.push(responseData);
           console.log('    - Saved as first response');
+          // Store first response size in KB
+          this.firstResponseSize = responseData.length / 1024;
           this.firstResponseSize = responseData.length;
         }
       }
